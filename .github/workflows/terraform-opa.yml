@@ -48,7 +48,6 @@ jobs:
         run: opa check --strict policy/
 
       - name: Evaluate OPA policy against Terraform plan
-        id: policy
         shell: bash
         run: |
           set -euo pipefail
@@ -70,8 +69,8 @@ jobs:
 
           echo "OPA policy passed. No violations found."
 
-      # Apply solo se ejecuta si init, validate, plan y OPA pasan.
-      # Este ejemplo usa exclusivamente el provider random; no accede a una nube.
+      # Apply only if init, validate, plan and policy checks pass.
+      # Pull requests are plan/policy-only; they do not apply.
       - name: Terraform apply
         if: success() && github.event_name != 'pull_request'
         run: terraform apply -input=false -auto-approve tfplan
