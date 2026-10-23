@@ -11,7 +11,7 @@ terraform {
 
 # This lab creates no cloud resources.
 resource "random_pet" "lab_name" {
-  prefix = "lab"
+  prefix = "lax"
   length = 2
 }
 
