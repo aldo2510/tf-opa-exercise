@@ -1,0 +1,80 @@
+name: Terraform + OPA policy
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  terraform-opa:
+    name: Terraform plan, OPA policy and apply
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.9.8
+          terraform_wrapper: false
+
+      - name: Setup OPA
+        uses: open-policy-agent/setup-opa@v2
+        with:
+          version: latest
+
+      - name: Terraform fmt
+        run: terraform fmt -check -recursive
+
+      - name: Terraform init
+        run: terraform init -input=false
+
+      - name: Terraform validate
+        run: terraform validate
+
+      - name: Terraform plan
+        run: terraform plan -input=false -out=tfplan
+
+      - name: Export plan as JSON
+        run: terraform show -json tfplan > tfplan.json
+
+      - name: Validate Rego syntax
+        run: opa check --strict policy/
+
+      - name: Evaluate OPA policy against Terraform plan
+        shell: bash
+        run: |
+          set -euo pipefail
+          opa eval \
+            --format pretty \
+            --data policy/terraform.rego \
+            --input tfplan.json \
+            'data.terraform.security.deny' | tee opa-deny.json
+
+          DENY_COUNT="$(opa eval --format raw \
+            --data policy/terraform.rego \
+            --input tfplan.json \
+            'count(data.terraform.security.deny)')"
+
+          if [ "$DENY_COUNT" != "0" ]; then
+            echo "::error::OPA policy denied this Terraform plan."
+            exit 1
+          fi
+
+          echo "OPA policy passed. No violations found."
+
+      # Apply only if init, validate, plan and policy checks pass.
+      # Pull requests are plan/policy-only; they do not apply.
+      - name: Terraform apply
+        if: success() && github.event_name != 'pull_request'
+        run: terraform apply -input=false -auto-approve tfplan
+
+      - name: Show generated name
+        if: success() && github.event_name != 'pull_request'
+        run: terraform output generated_name
